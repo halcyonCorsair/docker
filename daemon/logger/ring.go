@@ -93,6 +93,7 @@ func (r *RingLogger) Close() error {
 		}
 
 		if err := r.l.Log(msg); err != nil {
+			ringBufferLogWritesFailedCount.Inc(1)
 			logrus.WithField("driver", r.l.Name()).
 				WithField("container", r.logInfo.ContainerID).
 				WithError(err).
@@ -107,6 +108,11 @@ func (r *RingLogger) Close() error {
 // logger.
 // This is run in a goroutine when the RingLogger is created
 func (r *RingLogger) run() {
+	logrus.WithField("driver", r.l.Name()).
+		WithField("container", r.logInfo.ContainerID).
+		WithField("maxBytes", r.buffer.maxBytes).
+		WithField("queueSize", cap(r.buffer.queue)).
+		Info("Starting ring logger")
 	for {
 		if r.closed() {
 			return
@@ -117,6 +123,7 @@ func (r *RingLogger) run() {
 			return
 		}
 		if err := r.l.Log(msg); err != nil {
+			ringBufferLogWritesFailedCount.Inc(1)
 			logrus.WithField("driver", r.l.Name()).
 				WithField("container", r.logInfo.ContainerID).
 				WithError(err).
@@ -161,6 +168,7 @@ func (r *messageRing) Enqueue(m *Message) error {
 		return errClosed
 	}
 	if mSize+r.sizeBytes > r.maxBytes && len(r.queue) > 0 {
+		ringBufferEnqueueFailedCount.Inc(1)
 		r.wait.Signal()
 		r.mu.Unlock()
 		return nil
